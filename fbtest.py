@@ -25,7 +25,7 @@
 #  All Rights Reserved.
 #  Contributor(s): ______________________________________.
 
-from __future__ import print_function
+
 import sys
 import types
 import os
@@ -39,7 +39,7 @@ import itertools
 import pickle
 import weakref
 import traceback
-from StringIO import StringIO
+from io import StringIO
 import fdb
 import fdb.services as fbservice
 from fdb.ibase import DB_CHAR_SET_NAME_TO_PYTHON_ENCODING_MAP
@@ -49,6 +49,7 @@ from argparse import ArgumentParser
 from time import time
 from xml.sax import saxutils
 import datetime
+from functools import reduce
 
 __version__ = "1.0.2"
 
@@ -351,8 +352,8 @@ def as_unicode(value):
     Accepts `Unicode`, `strings` encoded in UTF-8 or `None` and returns `Unicode`
     string or `None`.
     """
-    assert value is None or isinstance(value,types.StringTypes)
-    if isinstance(value,types.StringType):
+    assert value is None or isinstance(value,str)
+    if isinstance(value,bytes):
         return value.decode('utf-8')
     else:
         return value
@@ -361,8 +362,8 @@ def as_utf8(value):
     Accepts `Unicode`, `strings` or `None`. If paremeter is unicode, it's returned as
     string encoded in UTF-8. String or `None` parameter is returned as is.
     """
-    assert value is None or isinstance(value,types.StringTypes)
-    if isinstance(value,types.UnicodeType):
+    assert value is None or isinstance(value,str)
+    if isinstance(value,str):
         return value.encode('utf-8')
     else:
         return value
@@ -520,7 +521,7 @@ class TestVersion(object):
         def substitute_macros(text):
             """Substitute macros for context values."""
             f_text = text
-            for (pattern,replacement) in context.environment.items():
+            for (pattern,replacement) in list(context.environment.items()):
                 replacement = replacement.replace(os.path.sep,'/')
                 f_text = f_text.replace('$(%s)' % pattern.upper(), replacement)
             return f_text
@@ -577,13 +578,13 @@ class TestVersion(object):
             print('')
             # For each row, print the value of each field left-justified within
             # the maximum possible width of that field.
-            fieldIndices = range(len(cur.description))
+            fieldIndices = list(range(len(cur.description)))
             for row in cur:
                 for fieldIndex in fieldIndices:
                     fieldValue = row[fieldIndex]
-                    if not isinstance(fieldValue,types.StringTypes):
+                    if not isinstance(fieldValue,str):
                         fieldValue = str(fieldValue)
-                    if isinstance(fieldValue,types.UnicodeType):
+                    if isinstance(fieldValue,str):
                         fieldValue = fieldValue.encode('utf8')
                     fieldMaxWidth = max((len(cur.description[fieldIndex][fdb.DESCRIPTION_NAME]),cur.description[fieldIndex][fdb.DESCRIPTION_DISPLAY_SIZE]))
                     print (fieldValue.ljust(fieldMaxWidth),end=' ')
@@ -643,8 +644,8 @@ class TestVersion(object):
         if context.version.startswith('1.5'):
             fb15bandaid()
 
-        isqlsubs= map(re.compile,['(?m)Database:.*\n?', 'SQL>[ \t]*\n?',
-                                  'CON>[ \t]*\n?', '-->[ \t]*\n?'])
+        isqlsubs= list(map(re.compile,['(?m)Database:.*\n?', 'SQL>[ \t]*\n?',
+                                  'CON>[ \t]*\n?', '-->[ \t]*\n?']))
         cause = 'Unknown cause'
         cleanup_db = None
         connection = None
@@ -861,7 +862,7 @@ class TestVersion(object):
                 try:
                     sys.stdout = StringIO()
                     sys.stderr = StringIO()
-                    exec substitute_macros(self.test_script) in global_ns, local_ns
+                    exec(substitute_macros(self.test_script), global_ns, local_ns)
                 except KeyboardInterrupt:
                     raise
                 except:
@@ -902,7 +903,7 @@ class TestVersion(object):
                 finally:
                     sys.stdout = saved_out
                     sys.stderr = saved_err
-                    for conn in (obj for (name,obj) in itertools.chain(global_ns.items(),local_ns.items())
+                    for conn in (obj for (name,obj) in itertools.chain(list(global_ns.items()),list(local_ns.items()))
                                  if isinstance(obj,fdb.Connection) and name != 'db_conn'):
                         if not conn.closed:
                             conn.close()
@@ -955,21 +956,21 @@ class TestVersion(object):
         for (key,value) in data:
             if not store(key,value):
                 continue
-            if isinstance(value,types.UnicodeType):
+            if isinstance(value,str):
                 value = value.encode('utf-8')
-            if isinstance(value,types.StringTypes):
+            if isinstance(value,str):
                 value = trim_value(value)
             if key in ['database_name','expected_stderr','expected_stdout',
                        'init_script','test_script']:
                 items.append(" '%s': %s" % (key,quote(value)))
-            elif isinstance(value,types.StringType):
+            elif isinstance(value,bytes):
                 items.append(" '%s': %s" % (key,quote(value)))
             elif key == 'substitutions':
                 l = []
                 for (pattern,replacement) in value:
-                    if isinstance(pattern,types.UnicodeType):
+                    if isinstance(pattern,str):
                         pattern = pattern.encode('utf-8')
-                    if isinstance(replacement,types.UnicodeType):
+                    if isinstance(replacement,str):
                         replacement = replacement.encode('utf-8')
                     l.append('(%s,%s)' % (quote(pattern),quote(replacement)))
                 items.append(" '%s': %s" % (key,'[%s]' % ','.join(l)))
@@ -1040,11 +1041,11 @@ class Test(object):
         data = [(key,self.__dict__[key]) for key in self.FIELDS]
         items = []
         for (key,value) in data:
-            if isinstance(value,types.UnicodeType):
+            if isinstance(value,str):
                 value = value.encode('utf-8')
-            if isinstance(value,types.StringTypes):
+            if isinstance(value,str):
                 value = trim_value(value)
-            if isinstance(value,types.StringType):
+            if isinstance(value,bytes):
                 items.append("'%s': %s" % (key,quote(value)))
             elif key == 'versions':
                 l = []
@@ -1111,11 +1112,11 @@ class Resource(object):
         data = [(key,self.__dict__[key]) for key in self.FIELDS]
         items = []
         for (key,value) in data:
-            if isinstance(value,types.UnicodeType):
+            if isinstance(value,str):
                 value = value.encode('utf-8')
-            if isinstance(value,types.StringTypes):
+            if isinstance(value,str):
                 value = trim_value(value)
-            if isinstance(value,types.StringType):
+            if isinstance(value,bytes):
                 items.append("'%s': %s" % (key,quote(value)))
             else:
                 items.append("'%s': %s" % (key,str(value)))
@@ -1290,7 +1291,7 @@ class Suite(object):
             return self.name
     def get_tests(self):
         """Return all tests for this suite (including tests from sub-suites)."""
-        subtests = itertools.chain(*(s.get_tests() for s in self.suites.values()))
+        subtests = itertools.chain(*(s.get_tests() for s in list(self.suites.values())))
         tt = [t for t in itertools.chain(self.tests,subtests)]
         return tt
     def load(self):
@@ -1647,7 +1648,7 @@ class Result(object):
         self.set_outcome(Result.ERROR, cause, annotations)
     def get_cause(self):
         """Return cause."""
-        if self.has_key(Result.CAUSE):
+        if Result.CAUSE in self:
             return self[Result.CAUSE]
         else:
             return ""
@@ -1691,25 +1692,25 @@ class Result(object):
     # annotations.
 
     def __getitem__(self, key):
-        assert type(key) in types.StringTypes
+        assert type(key) in str
         return self.annotations[key]
     def __setitem__(self, key, value):
-        assert type(key) in types.StringTypes
-        assert type(value) in types.StringTypes
+        assert type(key) in str
+        assert type(value) in str
         self.annotations[key] = value
     def __delitem__(self, key):
-        assert type(key) in types.StringTypes
+        assert type(key) in str
         del self.annotations[key]
     def get(self, key, default=None):
-        assert type(key) in types.StringTypes
+        assert type(key) in str
         return self.annotations.get(key, default)
     def has_key(self, key):
-        assert type(key) in types.StringTypes
-        return self.annotations.has_key(key)
+        assert type(key) in str
+        return key in self.annotations
     def keys(self):
-        return self.annotations.keys()
+        return list(self.annotations.keys())
     def items(self):
-        return self.annotations.items()
+        return list(self.annotations.items())
 
 class RunResults(object):
     """Collection of test/resource Results.
@@ -1742,7 +1743,7 @@ class RunResults(object):
     def _quoteattr(self, attr):
         """Escape an XML attribute. Value can be unicode."""
         attr = xml_safe(attr)
-        if isinstance(attr, unicode) and not UNICODE_STRINGS:
+        if isinstance(attr, str) and not UNICODE_STRINGS:
             attr = attr.encode(self.encoding)
         return saxutils.quoteattr(attr)
     def clear(self):
@@ -1753,31 +1754,31 @@ class RunResults(object):
         self.results[result.id] = result
 
     def __getitem__(self, key):
-        assert type(key) in types.StringTypes
+        assert type(key) in str
         return self.results[key]
     def __setitem__(self, key, value):
-        assert type(key) in types.StringTypes
+        assert type(key) in str
         assert type(value) == Result
         self.results[key] = value
     def __delitem__(self, key):
-        assert type(key) in types.StringTypes
+        assert type(key) in str
         del self.results[key]
     def get(self, key, default=None):
-        assert type(key) in types.StringTypes
+        assert type(key) in str
         return self.results.get(key, default)
     def has_key(self, key):
-        assert type(key) in types.StringTypes
-        return self.results.has_key(key)
+        assert type(key) in str
+        return key in self.results
     def keys(self):
-        return self.results.keys()
+        return list(self.results.keys())
     def items(self):
-        return self.results.items()
+        return list(self.results.items())
     def values(self):
-        return self.results.values()
+        return list(self.results.values())
 
     def get_outcomes(self):
         """Get list outcomes from stored Results"""
-        return [r.outcome for r in self.values()]
+        return [r.outcome for r in list(self.values())]
     def dump(self,filename):
         """Store (pickle) collection of :class:`Result` instances to file."""
         try:
@@ -1801,34 +1802,34 @@ class RunResults(object):
         return obj
     def get_passes(self):
         """Return list of Results with PASS outcome"""
-        return [result for result in self.values() if result.outcome == Result.PASS]
+        return [result for result in list(self.values()) if result.outcome == Result.PASS]
     def get_untested(self):
         """Return list of Results with UNTESTED outcome"""
-        return [result for result in self.values() if result.outcome == Result.UNTESTED]
+        return [result for result in list(self.values()) if result.outcome == Result.UNTESTED]
     def get_errors(self):
         """Return list of Results with ERROR outcome"""
-        return [result for result in self.values() if result.outcome == Result.ERROR]
+        return [result for result in list(self.values()) if result.outcome == Result.ERROR]
     def get_fails(self):
         """Return list of Results with FAIL outcome"""
-        return [result for result in self.values() if result.outcome == Result.FAIL]
+        return [result for result in list(self.values()) if result.outcome == Result.FAIL]
     def get_skipped(self):
         """Return list of Results with SKIPPED outcome"""
-        return [result for result in self.values() if result.outcome == Result.SKIPPED]
+        return [result for result in list(self.values()) if result.outcome == Result.SKIPPED]
     def get_pass_count(self):
         """Return number of PASS outcomes"""
-        return sum(1 for outcome in (r.outcome for r in self.values()) if outcome == Result.PASS)
+        return sum(1 for outcome in (r.outcome for r in list(self.values())) if outcome == Result.PASS)
     def get_error_count(self):
         """Return number of ERROR outcomes"""
-        return sum(1 for outcome in (r.outcome for r in self.values()) if outcome == Result.ERROR)
+        return sum(1 for outcome in (r.outcome for r in list(self.values())) if outcome == Result.ERROR)
     def get_untested_count(self):
         """Return number of UNTESTED outcomes"""
-        return sum(1 for outcome in (r.outcome for r in self.values()) if outcome == Result.UNTESTED)
+        return sum(1 for outcome in (r.outcome for r in list(self.values())) if outcome == Result.UNTESTED)
     def get_skipped_count(self):
         """Return number of SKIPPED outcomes"""
-        return sum(1 for outcome in (r.outcome for r in self.values()) if outcome == Result.SKIPPED)
+        return sum(1 for outcome in (r.outcome for r in list(self.values())) if outcome == Result.SKIPPED)
     def get_fail_count(self):
         """Return number of FAIL outcomes"""
-        return sum(1 for outcome in (r.outcome for r in self.values()) if outcome == Result.FAIL)
+        return sum(1 for outcome in (r.outcome for r in list(self.values())) if outcome == Result.FAIL)
     def save(self,filename):
         """Write text report to file.
 
@@ -1837,10 +1838,10 @@ class RunResults(object):
         f = open(filename,'w')
         f.write('Test results for %s v%s\n' % (self.description,self.version))
         f.write('Series ran by %s\n\n' % self.person_name)
-        for result in self.values():
+        for result in list(self.values()):
             f.write('%-70s : %s\n' % (result.id,result.outcome))
             if result.outcome != Result.PASS:
-                for (kind, annotation) in result.annotations.items():
+                for (kind, annotation) in list(result.annotations.items()):
                     f.write('%s:\n%s\n' % (kind, as_utf8(annotation)))
                     f.write('\n')
         f.write('\n\nPasses:   %i\n' % self.get_pass_count())
@@ -1859,7 +1860,7 @@ class RunResults(object):
         f.write('<testsuite name="fbtest" tests="%i" errors="%i" failures="%i" untested="%i" skip="%i">' %
                 (len(self.results),self.get_error_count(),self.get_fail_count(),
                  self.get_untested_count(),self.get_skipped_count()))
-        for result in self.values():
+        for result in list(self.values()):
             if result.outcome == Result.PASS:
                 f.write('<testcase classname="Test" name="%s" time="%.3f" />' % (
                 result.id,result.get_run_time()))
@@ -1867,7 +1868,7 @@ class RunResults(object):
                 f.write('<testcase classname="Test" name="%s" time="%.3f">' % (
                 result.id,result.get_run_time()))
                 if result.outcome == Result.ERROR:
-                    if result.has_key(Result.EXCEPTION):
+                    if Result.EXCEPTION in result:
                         e = result[Result.EXCEPTION]
                         exc = e[:e.find(':')]
                         msg = e[e.find(':')+2:]
@@ -1884,7 +1885,7 @@ class RunResults(object):
                     for key in ['ISQL_stripped_diff','Python_stripped_diff',
                                 'ISQL_stderr_stripped_diff',
                                 'Python_stderr_stripped_diff']:
-                        if result.has_key(key):
+                        if key in result:
                             cdata = as_utf8(result[key])
                     f.write('<failure type="fail" message=%s>' % self._quoteattr(result.get_cause()))
                     f.write('<![CDATA[%s]]>' % escape_cdata(cdata))
@@ -2233,7 +2234,7 @@ class Runner(object):
 
         stop_time = time()
         # resource cleanup
-        for (resource,res_result) in resources.values():
+        for (resource,res_result) in list(resources.values()):
             if res_result.outcome == Result.PASS:
                 res_result = Result(Result.RESOURCE_CLEANUP,resource.id)
                 if verbosity == 2:
@@ -2356,14 +2357,14 @@ class ScriptRunner(object):
             expectations = None
         if options.rerun:
             last_results = RunResults.load(os.path.join(os.getcwd(),'results.trf'))
-            run_ids = [r.id for r in last_results.results.values() if r.kind == Result.TEST and
+            run_ids = [r.id for r in list(last_results.results.values()) if r.kind == Result.TEST and
                        r.outcome != Result.PASS]
-            run_list = list(itertools.imap(repository.get_test, run_ids))
+            run_list = list(map(repository.get_test, run_ids))
         elif options.untested:
             last_results = RunResults.load(os.path.join(os.getcwd(),'results.trf'))
-            run_ids = [r.id for r in last_results.results.values() if r.kind == Result.TEST and
+            run_ids = [r.id for r in list(last_results.results.values()) if r.kind == Result.TEST and
                        r.outcome == Result.UNTESTED]
-            run_list = list(itertools.imap(repository.get_test, run_ids))
+            run_list = list(map(repository.get_test, run_ids))
         else:
             if options.name:
                 suite = repository.get_suite(options.name)
@@ -2482,7 +2483,7 @@ class ScriptRunner(object):
                 for key in ['ISQL_stripped_diff','Python_stripped_diff',
                             'ISQL_stderr_stripped_diff',
                             'Python_stderr_stripped_diff']:
-                    if fail.has_key(key):
+                    if key in fail:
                         print ('-' * 70)
                         print ('%s:' % key)
                         print (as_utf8(fail[key]))
@@ -2503,7 +2504,7 @@ class ScriptRunner(object):
             if cause:
                 print ('  ',error.get_cause())
             if detail:
-                for key in (k for k in error.keys() if k not in [Result.START_TIME,
+                for key in (k for k in list(error.keys()) if k not in [Result.START_TIME,
                                                                  Result.END_TIME,
                                                                  Result.CAUSE]):
                     print ('-' * 70)
@@ -2565,7 +2566,7 @@ class ScriptRunner(object):
         finally:
             f.close()
 
-        for test_id,test_detail in test_details.items():
+        for test_id,test_detail in list(test_details.items()):
             #print ('Detail: %s' % test_id)
             f = open(os.path.join(output_dir,test_id+'.html'),'w')
             try:
@@ -2579,7 +2580,7 @@ class ScriptRunner(object):
         """Filters out annotations we don't want to compare.
         """
         result = []
-        for key,value in annotations.items():
+        for key,value in list(annotations.items()):
             if key not in [Result.START_TIME,Result.END_TIME]:
                 result.append((key,value))
         result.sort(key=operator.itemgetter(0))
@@ -2597,9 +2598,9 @@ class ScriptRunner(object):
         """
         result = (r1.kind == r2.kind) and (r1.outcome == r2.outcome)
         if result:
-            result = reduce(lambda x,y: x and y,map(lambda x,y: x == y,
+            result = reduce(lambda x,y: x and y,list(map(lambda x,y: x == y,
                                                     self.annotation_filter(r1.annotations),
-                                                    self.annotation_filter(r2.annotations)))
+                                                    self.annotation_filter(r2.annotations))))
         return result
 
     def get_result_filenames(self,directory):
@@ -2642,20 +2643,20 @@ class ScriptRunner(object):
         tests = {} # Dictionary of all tests found in results; Test ID: list of results
         for result in results:
             column = results.index(result)
-            for test_id,test_result in result.items():
+            for test_id,test_result in list(result.items()):
                 tests.setdefault(test_id,len(results)*[None])[column] = test_result
 
         # pass 2: Analyze results for each tests that didn't pass in all runs
         test_details = {}
         # step 1: Collect details for tests that didn't pass
-        for test_id,test_results in tests.items():
+        for test_id,test_results in list(tests.items()):
             for test_result in test_results:
                 if test_result and test_result.outcome != Result.PASS:
                     l = test_details.setdefault(test_id,list())
                     result = results[test_results.index(test_result)]
                     l.append((self.get_run_tag(result.platform,result.cpuarch,result.arch,result.sequence),test_result))
         # step 2: group results for each test
-        for test_id,test_results in test_details.items():
+        for test_id,test_results in list(test_details.items()):
             groups = []  # item format: (result,[list_of_runs])
             for result_id,test_result in test_results:
                 added = False
@@ -2669,7 +2670,7 @@ class ScriptRunner(object):
             test_results.extend(groups)
 
         # pass 3: Order tests
-        test_order = tests.keys()
+        test_order = list(tests.keys())
         test_order.sort(key=okey)
 
         # pass 4: Generate report
@@ -2679,11 +2680,11 @@ class ScriptRunner(object):
         """Get Subversion login credentials from user.
         """
         if not username:
-            username = raw_input("SVN User name:")
+            username = input("SVN User name:")
         else:
             print("SVN repository: ",realm)
             print("User: ",username)
-        password = raw_input("Password:")
+        password = input("Password:")
         retcode = True if username else False
         return retcode, username, password, True
     def svn_notify(self,event):
